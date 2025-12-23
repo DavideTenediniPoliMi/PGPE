@@ -6,6 +6,3 @@ site-package-path = [".venv/Lib/site-packages"]
 python-platform = "windows"
 python-version = "3.12"
 python-interpreter-path = ".venv/Scripts/python"
-
-[inlayHints]
-enabled = "off"
