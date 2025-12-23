@@ -1,15 +1,10 @@
 from collections.abc import Iterable
-from typing import Any, TypedDict, Unpack
+from typing import Any
 
 import numpy as np
 
 from .optimizers import Adam, Optimizer
 from .utils import ensure_positive_float, ensure_positive_int, ensure_vector
-
-
-class D(TypedDict):
-    test: int
-    prova: str
 
 
 class PGPE:
@@ -44,7 +39,6 @@ class PGPE:
         # --- Optimizer Injection ---
         optimizer_class: type[Optimizer] = Adam,
         optimizer_config: dict[str, Any] | None = None,
-        **kwargs: Unpack[D],
     ) -> None:
         """
         Args:
@@ -59,7 +53,7 @@ class PGPE:
             stdev_clip_percent: Max relative change for stdev per step (clip).
             symmetric_sampling: Whether to use symmetric sampling (+/- noise).
             natural_gradient: Whether to use natural gradient updates.
-            normalize_fitness: Whether to z-score fitness values using a running average.
+            normalize_fitness: Whether to z-score fitness values using a running average
             max_generations: Total generations for linear LR decay.
             min_lr_ratio: Final LR as a fraction of initial LR.
             optimizer_class: The class of the optimizer to use.
@@ -86,23 +80,17 @@ class PGPE:
         self._stdev_clip_percent = stdev_clip_percent
 
         # Scheduler Configuration
-        self._max_generations = ensure_positive_int(
-            max_generations, "max_generations"
-        )
-        self._lr_range = 1 - ensure_positive_float(
-            min_lr_ratio, "min_lr_ratio"
-        )
+        self._max_generations = ensure_positive_int(max_generations, "max_generations")
+        self._lr_range = 1 - ensure_positive_float(min_lr_ratio, "min_lr_ratio")
         self._generation_count = 0
 
         # State Initialization
         self._center = ensure_vector(center_init, self._length, self._dtype)
-        self._logstd = np.log(
-            ensure_vector(stdev_init, self._length, self._dtype)
-        )
+        self._logstd = np.log(ensure_vector(stdev_init, self._length, self._dtype))
 
         # Optimizer Instantiation
         self._optimizer = optimizer_class(
-            solution_length=self._length,
+            dim=self._length,
             stepsize=self._initial_center_lr,
             dtype=self._dtype,
             **(optimizer_config or {}),
@@ -133,14 +121,12 @@ class PGPE:
         """Generates a new population of candidate solutions of size `popsize`."""
         if self._symmetric_sampling:
             num_base = self._popsize // 2
-            base_noises = self._rndgen.randn(num_base, self._length).astype(
-                self._dtype
-            )
+            base_noises = self._rndgen.randn(num_base, self._length).astype(self._dtype)
             self._noises = np.concatenate([base_noises, -base_noises], axis=0)
         else:
-            self._noises = self._rndgen.randn(
-                self._popsize, self._length
-            ).astype(self._dtype)
+            self._noises = self._rndgen.randn(self._popsize, self._length).astype(
+                self._dtype
+            )
 
         self._solutions = self._center + np.exp(self._logstd) * self._noises
         return self._solutions.copy()
