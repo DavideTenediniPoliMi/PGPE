@@ -1,0 +1,80 @@
+line-length = 88
+indent-width = 4
+target-version = "py312"
+
+[lint]
+select = [
+    "F",
+    "W",
+    "E",
+    "I",
+    "N",
+    "UP",
+    "ANN",
+    "ASYNC",
+    "BLE",
+    "B",
+    "A",
+    "COM",
+    "C4",
+    "DTZ",
+    "T10",
+    "EM", 
+    "ISC",
+    "ICN",
+    "G",
+    "INP",
+    "PIE",
+    "PYI",
+    "PT",
+    "Q",
+    "RSE",
+    "RET",
+    "SLF",
+    "SLOT",
+    "SIM",
+    "TID",
+    "TCH",
+    "INT",
+    "ARG",
+    "ERA",
+    "PL",
+    "TRY",
+    "FLY",
+    "NPY",
+    "FURB",
+    "LOG",
+    "RUF",
+    "C90",
+]
+ignore = [
+    "B008",
+    "PLR0913",
+    "PLR0912",
+    "PLR2004",
+    "EM102",
+    "G004",
+    "COM812",
+    "Q000",
+    "Q003",
+    "PLR0915",
+    "PLR0911",
+    "D10",
+    "RUF010",
+    "ANN002",
+    "TRY003",
+    "EM101",
+    "N806",
+    "ERA001",
+    "RUF012",
+    "E402",
+    "ANN004",
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
