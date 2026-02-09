@@ -53,6 +53,7 @@ class PGPE:
         symmetric_sampling: bool = True,
         natural_gradient: bool = False,
         normalize_fitness: bool = True,
+        stats_alpha: float = 0.1,
         # --- Scheduling ---
         max_generations: int = 1000,
         min_lr_ratio: float = 0.2,
@@ -98,6 +99,9 @@ class PGPE:
             normalize_fitness: If True, fitness values are z-scored using a
                 cumulative running mean and variance before gradient computation.
                 Recommended to handle shifting fitness landscapes. Default is True.
+            stats_alpha: Smoothing factor for the running mean/variance of fitness
+                normalization. Must be in (0, 1]. Higher values give more weight to
+                recent fitness values. Default is 0.1.
             max_generations: Total number of generations (steps) used for the
                 linear learning rate decay scheduler.
             min_lr_ratio: The minimum fraction of the initial learning rate to
@@ -115,6 +119,10 @@ class PGPE:
         self._symmetric_sampling = symmetric_sampling
         self._normalize_fitness = normalize_fitness
         self._natural_gradient = natural_gradient
+
+        if not (0 < stats_alpha <= 1):
+            raise ValueError("stats_alpha must be in the range (0, 1].")
+        self._alpha = stats_alpha
 
         # Backend Detection
         self._xp, found_device = get_xp(center_init, stdev_init)
@@ -275,15 +283,21 @@ class PGPE:
 
     def _update_running_stats(self, fitness: Array) -> None:
         self._generation_count += 1
-        alpha = 1.0 / self._generation_count
 
         batch_mean = self._xp.mean(fitness)
         batch_var = self._xp.var(fitness)
 
-        self._running_mean = self._running_mean + alpha * (
+        if self._generation_count == 1:
+            self._running_mean = batch_mean
+            self._running_var = batch_var
+            return
+
+        self._running_mean = self._running_mean + self._alpha * (
             batch_mean - self._running_mean
         )
-        self._running_var = self._running_var + alpha * (batch_var - self._running_var)
+        self._running_var = self._running_var + self._alpha * (
+            batch_var - self._running_var
+        )
 
     def _update_learning_rates(self) -> None:
         if self._generation_count >= self._max_generations:
