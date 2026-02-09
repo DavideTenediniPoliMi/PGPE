@@ -1,6 +1,6 @@
 from typing import Any, Protocol, runtime_checkable
 
-import numpy as np
+from array_api.latest import Array, ArrayNamespace
 
 from .utils import ensure_positive_float, ensure_positive_int
 
@@ -50,12 +50,14 @@ class Optimizer(Protocol):
         self,
         *,
         dim: int,
-        dtype: np.dtype,
         stepsize: float,
+        xp: ArrayNamespace,
+        dtype: Any,
+        device: Any,
         **kwargs: Any,
     ) -> None: ...
 
-    def ascent(self, globalg: np.ndarray) -> np.ndarray:
+    def ascent(self, globalg: Array) -> Array:
         """
         Performs a gradient ascent step.
 
@@ -64,6 +66,21 @@ class Optimizer(Protocol):
 
         Returns:
             The update step vector (1D array) to be added to the parameters.
+        """
+        ...
+
+    def state_dict(self) -> dict:
+        """
+        Returns a dictionary containing the state of the optimizer for checkpointing.
+        """
+        ...
+
+    def load_state_dict(self, state: dict) -> None:
+        """
+        Loads the optimizer state from a checkpoint dictionary.
+
+        Args:
+            state: A dictionary containing the optimizer state.
         """
         ...
 
@@ -82,24 +99,29 @@ class Adam:
         *,
         dim: int,
         stepsize: float,
-        dtype: np.dtype,
+        xp: ArrayNamespace,
+        dtype: Any = None,
+        device: Any = None,
         beta1: float = 0.9,
         beta2: float = 0.999,
         epsilon: float = 1e-8,
     ) -> None:
+        self.xp = xp
+        self.device = device
+        self.dtype = dtype or xp.float32
+
         self.dim = ensure_positive_int(dim, "dim")
-        self.dtype = dtype
         self.stepsize = ensure_positive_float(stepsize, "stepsize")
         self.beta1 = ensure_positive_float(beta1, "beta1")
         self.beta2 = ensure_positive_float(beta2, "beta2")
         self.epsilon = ensure_positive_float(epsilon, "epsilon")
 
         self.t = 0
-        self.m = np.zeros(self.dim, dtype=self.dtype)
-        self.v = np.zeros(self.dim, dtype=self.dtype)
+        self.m = xp.zeros(self.dim, dtype=self.dtype, device=self.device)
+        self.v = xp.zeros(self.dim, dtype=self.dtype, device=self.device)
 
-    def ascent(self, globalg: np.ndarray) -> np.ndarray:
-        g = np.asarray(globalg, dtype=self.dtype)
+    def ascent(self, globalg: Array) -> Array:
+        g = self.xp.asarray(globalg, dtype=self.dtype, device=self.device)
         if g.shape != (self.dim,):
             raise ValueError(
                 f"Gradient shape mismatch. Expected ({self.dim},), got {g.shape}"
@@ -115,7 +137,23 @@ class Adam:
         v_hat = self.v / (1.0 - self.beta2**self.t)
 
         # Compute the update step
-        return self.stepsize * m_hat / (np.sqrt(v_hat) + self.epsilon)
+        return self.stepsize * m_hat / (self.xp.sqrt(v_hat) + self.epsilon)
+
+    def state_dict(self) -> dict:
+        return {
+            "t": self.t,
+            "m": self.m,
+            "v": self.v,
+        }
+
+    def load_state_dict(self, state: dict) -> None:
+        self.t = state["t"]
+        self.m = self.xp.asarray(
+            state["m"], dtype=self.dtype, device=self.device, copy=True
+        )
+        self.v = self.xp.asarray(
+            state["v"], dtype=self.dtype, device=self.device, copy=True
+        )
 
 
 # Code copied and adapted from OpenAI's evolution-strategies-starter ends here.

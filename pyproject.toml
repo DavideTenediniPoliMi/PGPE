@@ -1,15 +1,16 @@
 [project]
 name = "pgpe"
-version = "0.1.0"
-description = "A modern, typed, pure-NumPy implementation of PGPE."
+version = "1.0.0"
+description = "A modern, array API standard implementation of PGPE."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [
     { name = "Davide Tenedini", email = "davide.tenedini@polimi.it" },
 ]
 dependencies = [
-    "numpy>=2.4.0",
+    "array-api-compat>=1.13.0",
+    "numpy>=2.4.1",
 ]
 
 [build-system]
@@ -21,7 +22,12 @@ packages = ["src/pgpe"]
 
 [dependency-groups]
 dev = [
+    "array-api-strict>=2.4.1",
+    "jax>=0.9.0.1",
+    "jaxlib>=0.9.0.1",
     "pyrefly>=0.46.0",
     "pytest>=9.0.2",
     "ruff>=0.14.10",
+    "torch>=2.10.0",
+    "types-array-api>=1.1.4",
 ]
