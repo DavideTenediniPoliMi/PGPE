@@ -1,6 +1,6 @@
 [project]
 name = "pgpe"
-version = "1.0.0"
+version = "1.1.0"
 description = "A modern, array API standard implementation of PGPE."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -10,7 +10,7 @@ authors = [
 ]
 dependencies = [
     "array-api-compat>=1.13.0",
-    "numpy>=2.4.1",
+    "numpy>=2.1.0",
 ]
 
 [build-system]

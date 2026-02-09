@@ -1,2 +1,2 @@
 # PGPE
-A modern, typed, pure-NumPy implementation of PGPE, based on pgpelib ask-tell interface.
+A modern, array API standard implementation of PGPE, based on pgpelib ask-tell interface.
