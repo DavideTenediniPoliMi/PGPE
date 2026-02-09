@@ -5,7 +5,7 @@ from array_api.latest import Array, ArrayNamespace
 from array_api_compat import array_namespace
 
 try:
-    import numpy as np
+    import array_api_compat.numpy as np
 except ImportError:
     np = None
 
@@ -120,6 +120,23 @@ def setup_randn(
             return torch.randn(shape, generator=gen, device=device, dtype=dtype)  # type: ignore
 
         return randn_torch
+
+    if "jax" in xp.__name__:  # type: ignore
+        import jax  # noqa: PLC0415
+
+        class JAXStatefulRNG:
+            def __init__(self, seed: int | None) -> None:
+                # Handle seed: JAX requires an integer, defaults to 0 if None
+                _seed = seed if seed is not None else 0
+                self.key = jax.random.PRNGKey(_seed)
+
+            def __call__(self, shape: tuple[int, ...]) -> Array:
+                # Split the key: one for generating data, one for the next state
+                self.key, subkey = jax.random.split(self.key)
+                return jax.random.normal(subkey, shape, dtype=dtype)  # type: ignore
+
+        # Return the bound method or callable instance
+        return JAXStatefulRNG(seed)
 
     # NumPy / CuPy / Compliant Backends
     # Most compliant libraries mirror the NumPy random API

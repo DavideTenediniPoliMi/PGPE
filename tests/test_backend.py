@@ -311,3 +311,32 @@ def test_jax_strict_device_enforcement():
     
     # Confirm parameter update happened on dev0
     assert pgpe.center.device == dev0
+
+def test_jax():
+    """
+    Basic sanity check to ensure JAX backend works without device issues.
+    This is a more relaxed test than the strict device enforcement one.
+    """
+    try:
+        import jax
+        import jax.numpy as jnp
+    except ImportError:
+        pytest.skip("JAX not installed", allow_module_level=True)
+
+    # Initialize PGPE with JAX arrays
+    center = jnp.zeros(5)
+    stdev = jnp.ones(5) * 0.1
+
+    pgpe = PGPE(
+        solution_length=5,
+        popsize=10,
+        center_init=center,
+        stdev_init=stdev,
+        seed=SEED
+    )
+
+    # Run a simple ask/tell loop
+    for _ in range(3):
+        solutions = pgpe.ask()
+        fitness = jax.random.normal(jax.random.PRNGKey(SEED), (10,))
+        pgpe.tell(fitness)
