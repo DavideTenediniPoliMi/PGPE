@@ -96,7 +96,8 @@ def get_xp(*objs: Any) -> tuple[ArrayNamespace, Any]:
 
     raise ImportError(
         "Inputs are Python lists/floats, but NumPy is not installed. "
-        "Install NumPy or pass a backend-specific tensor."
+        "Install NumPy or pass a backend-specific tensor. "
+        "You can install NumPy with PGPE with the optional [numpy] group."
     ) from None
 
 

@@ -3,10 +3,14 @@ from typing import Any
 
 from array_api.latest import Array
 
-from pgpe.utils import get_xp, setup_randn
-
 from .optimizers import Adam, Optimizer
-from .utils import ensure_positive_float, ensure_positive_int, ensure_vector
+from .utils import (
+    ensure_positive_float,
+    ensure_positive_int,
+    ensure_vector,
+    get_xp,
+    setup_randn,
+)
 
 
 class PGPE:
@@ -120,6 +124,7 @@ class PGPE:
         self._normalize_fitness = normalize_fitness
         self._natural_gradient = natural_gradient
 
+        stats_alpha = ensure_positive_float(stats_alpha, "stats_alpha")
         if not (0 < stats_alpha <= 1):
             raise ValueError("stats_alpha must be in the range (0, 1].")
         self._alpha = stats_alpha
@@ -150,7 +155,10 @@ class PGPE:
 
         # Scheduler Configuration
         self._max_generations = ensure_positive_int(max_generations, "max_generations")
-        self._lr_range = 1 - ensure_positive_float(min_lr_ratio, "min_lr_ratio")
+        min_lr_ratio = ensure_positive_float(min_lr_ratio, "min_lr_ratio")
+        if not (0 < min_lr_ratio <= 1):
+            raise ValueError("min_lr_ratio must be in the range (0, 1].")
+        self._lr_range = 1 - min_lr_ratio
         self._generation_count = 0
 
         # State Initialization
