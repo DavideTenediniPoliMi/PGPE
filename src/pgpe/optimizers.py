@@ -41,13 +41,10 @@ if TYPE_CHECKING:
 # here:
 
 
-@runtime_checkable
-class Optimizer(Protocol):
+class Optimizer(ABC):
     """
     Protocol defining the interface for a gradient-based optimizer.
     """
-
-    stepsize: float
 
     def __init__(
         self,
@@ -57,9 +54,14 @@ class Optimizer(Protocol):
         xp: ArrayNamespace,
         dtype: Any,
         device: Any,
-        **kwargs: Any,
-    ) -> None: ...
+    ) -> None:
+        self.dim = ensure_positive_int(dim, "dim")
+        self.stepsize = ensure_positive_float(stepsize, "stepsize")
+        self.xp = xp
+        self.dtype = dtype
+        self.device = device
 
+    @abstractmethod
     def ascent(self, globalg: Array) -> Array:
         """
         Performs a gradient ascent step.
@@ -72,29 +74,20 @@ class Optimizer(Protocol):
         """
         ...
 
-    def state_dict(self) -> dict:
-        """
-        Returns a dictionary containing the state of the optimizer for checkpointing.
-        """
+    @abstractmethod
+    def state_dict(self) -> dict[str, Any]:
+        """Returns a dictionary containing the optimizer state."""
         ...
 
-    def load_state_dict(self, state: dict) -> None:
-        """
-        Loads the optimizer state from a checkpoint dictionary.
-
-        Args:
-            state: A dictionary containing the optimizer state.
-        """
+    @abstractmethod
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        """Loads the optimizer state from a checkpoint dictionary."""
         ...
 
 
-class Adam:
+class Adam(Optimizer):
     """
     Adam optimizer implementation.
-
-    Reference:
-        Kingma, Diederik P., and Jimmy Ba. "Adam: A method for stochastic
-        optimization." arXiv preprint arXiv:1412.6980 (2014).
     """
 
     def __init__(
@@ -109,19 +102,17 @@ class Adam:
         beta2: float = 0.999,
         epsilon: float = 1e-8,
     ) -> None:
-        self.xp = xp
-        self.device = device
-        self.dtype = dtype or xp.float32
+        super().__init__(
+            dim=dim, stepsize=stepsize, xp=xp, dtype=dtype or xp.float32, device=device
+        )
 
-        self.dim = ensure_positive_int(dim, "dim")
-        self.stepsize = ensure_positive_float(stepsize, "stepsize")
         self.beta1 = ensure_positive_float(beta1, "beta1")
         self.beta2 = ensure_positive_float(beta2, "beta2")
         self.epsilon = ensure_positive_float(epsilon, "epsilon")
 
         self.t = 0
-        self.m = xp.zeros(self.dim, dtype=self.dtype, device=self.device)
-        self.v = xp.zeros(self.dim, dtype=self.dtype, device=self.device)
+        self.m = self.xp.zeros(self.dim, dtype=self.dtype, device=self.device)
+        self.v = self.xp.zeros(self.dim, dtype=self.dtype, device=self.device)
 
     def ascent(self, globalg: Array) -> Array:
         g = self.xp.asarray(globalg, dtype=self.dtype, device=self.device)
@@ -142,14 +133,14 @@ class Adam:
         # Compute the update step
         return self.stepsize * m_hat / (self.xp.sqrt(v_hat) + self.epsilon)
 
-    def state_dict(self) -> dict:
+    def state_dict(self) -> dict[str, Any]:
         return {
             "t": self.t,
             "m": self.m,
             "v": self.v,
         }
 
-    def load_state_dict(self, state: dict) -> None:
+    def load_state_dict(self, state: dict[str, Any]) -> None:
         self.t = state["t"]
         self.m = self.xp.asarray(
             state["m"], dtype=self.dtype, device=self.device, copy=True
