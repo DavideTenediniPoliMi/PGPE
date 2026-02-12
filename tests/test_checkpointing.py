@@ -7,10 +7,12 @@ SEED = 42
 DIM = 5
 POP = 10
 
+
 def simple_fitness(solutions):
     """Deterministic fitness function (Sphere)."""
     # Works for numpy, torch, jax if they support basic operators
-    return -(solutions ** 2).sum(axis=1)
+    return -(solutions**2).sum(axis=1)
+
 
 def run_steps(optimizer, steps, fitness_fn):
     """Runs the optimizer for a number of steps."""
@@ -18,6 +20,7 @@ def run_steps(optimizer, steps, fitness_fn):
         solutions = optimizer.ask()
         fitness = fitness_fn(solutions)
         optimizer.tell(fitness)
+
 
 def verify_resume_determinism(xp_backend, device, dtype_name):
     """
@@ -32,10 +35,12 @@ def verify_resume_determinism(xp_backend, device, dtype_name):
         center_init = np.zeros(DIM, dtype=dtype)
     elif xp_backend == "torch":
         import torch
+
         dtype = getattr(torch, dtype_name)
         center_init = torch.zeros(DIM, dtype=dtype, device=device)
     elif xp_backend == "jax":
         import jax.numpy as jnp
+
         dtype = getattr(jnp, dtype_name)
         # JAX device handling is implicit or via put, typically cpu for tests
         center_init = jnp.zeros(DIM, dtype=dtype)
@@ -48,15 +53,15 @@ def verify_resume_determinism(xp_backend, device, dtype_name):
         popsize=POP,
         center_init=center_init,
         seed=SEED,
-        center_learning_rate=0.1
+        center_learning_rate=0.1,
     )
-    
+
     # Run first 5 steps
     run_steps(pgpe_a, 5, simple_fitness)
-    
+
     # SAVE STATE
     checkpoint = pgpe_a.state_dict()
-    
+
     # Run 5 more steps (Total 10)
     run_steps(pgpe_a, 5, simple_fitness)
     final_center_a = pgpe_a.center
@@ -66,22 +71,22 @@ def verify_resume_determinism(xp_backend, device, dtype_name):
     pgpe_b = PGPE(
         solution_length=DIM,
         popsize=POP,
-        center_init=center_init, # Same shape/device
+        center_init=center_init,  # Same shape/device
         seed=SEED + 999,
-        center_learning_rate=0.1
+        center_learning_rate=0.1,
     )
-    
+
     # LOAD STATE (Should overwrite the internal RNG state)
     pgpe_b.load_state_dict(checkpoint)
-    
+
     # Run 5 steps (Should replicate steps 6-10 of A)
     run_steps(pgpe_b, 5, simple_fitness)
     final_center_b = pgpe_b.center
 
     # --- Robust Assertions ---
-    # We cast everything to NumPy for the final check. 
+    # We cast everything to NumPy for the final check.
     # This avoids "DeviceArray" boolean issues in JAX and keeps the error messages readable.
-    
+
     if hasattr(final_center_a, "cpu"):
         # Torch / generic
         val_a = final_center_a.cpu().numpy()
@@ -119,7 +124,7 @@ def test_checkpointing_torch_deterministic():
 
     # CPU
     verify_resume_determinism("torch", "cpu", "float32")
-    
+
     # CUDA (Optional)
     if torch.cuda.is_available():
         verify_resume_determinism("torch", "cuda", "float32")

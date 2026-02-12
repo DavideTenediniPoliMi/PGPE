@@ -206,6 +206,7 @@ class PGPE:
         )
 
         self._noises: Array | None = None
+        self._stdev: Array | None = None
 
     @property
     def center(self) -> Array:
@@ -213,6 +214,8 @@ class PGPE:
 
     @property
     def stdev(self) -> Array:
+        if self._stdev is not None:
+            return self._stdev
         return self._xp.exp(self._logstd)
 
     def ask(self) -> Array:
@@ -224,15 +227,17 @@ class PGPE:
         else:
             self._noises = self._randn((self._popsize, self._length))
 
-        return self._center + self._xp.exp(self._logstd) * self._noises
+        # Cache value when asked
+        self._stdev = self.stdev
+        return self._center + self._stdev * self._noises
 
-    def tell(self, fitnesses: Array) -> None:
+    def tell(self, fitnesses: Array) -> None:  # noqa: C901
         """Updates the internal distribution based on evaluated fitnesses.
         Must be called after `ask()` and with fitnesses corresponding to the
         solutions returned by `ask()`.
         The array must match the device/dtype of the internal state.
         """
-        if self._noises is None:
+        if self._noises is None or self._stdev is None:
             raise RuntimeError("Called tell() before ask().")
 
         if hasattr(fitnesses, "device") and fitnesses.device != self._device:
@@ -288,9 +293,9 @@ class PGPE:
             fitness_for_logstd = fitness_arr
 
         # 2. Compute Gradients
-        stdev = self._xp.exp(self._logstd)
-
-        grad_center = self._xp.mean(fitness_for_center * base_noises, axis=0) / stdev
+        grad_center = (
+            self._xp.mean(fitness_for_center * base_noises, axis=0) / self._stdev
+        )
         grad_log_stdev = self._xp.mean(
             fitness_for_logstd * (base_noises**2 - 1), axis=0
         )
@@ -302,7 +307,7 @@ class PGPE:
 
         # 3. Apply Natural Gradient Adjustment
         if self._natural_gradient:
-            grad_center = grad_center * stdev**2
+            grad_center = grad_center * self._stdev**2
             grad_log_stdev = grad_log_stdev / 2
 
         # 4. Parameter Updates
@@ -321,6 +326,7 @@ class PGPE:
         # 5. Scheduling and Cleanup
         self._update_learning_rates()
         self._noises = None
+        self._stdev = None
 
     def _update_running_stats(self, fitness: Array) -> None:
         batch_mean = self._xp.mean(fitness)
