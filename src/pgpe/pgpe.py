@@ -247,26 +247,33 @@ class PGPE:
                 f"Expected {self._popsize} fitness values, got {fitness_arr.shape[0]}"
             )
 
-        # 1. Fold for Symmetric Sampling & Normalize Fitness (if needed)
-        base_noises = self._noises
-        if self._symmetric_sampling:
-            num_pairs = self._popsize // 2
-            fitness_pos = fitness_arr[:num_pairs, :]
-            fitness_neg = fitness_arr[num_pairs:, :]
-            fitness_arr = fitness_pos - fitness_neg
-            base_noises = self._noises[:num_pairs, :]
-
+        # 1. Normalize Fitness (apply baseline) and fold symmetric pairs if needed
         if self._normalize_fitness:
             self._update_running_stats(fitness_arr)
             fitness_arr = (fitness_arr - self._running_mean) / (
                 self._xp.sqrt(self._running_var) + 1e-8
             )
 
+        base_noises = self._noises
+        if self._symmetric_sampling:
+            num_pairs = self._popsize // 2
+            fitness_pos = fitness_arr[:num_pairs, :]
+            fitness_neg = fitness_arr[num_pairs:, :]
+            base_noises = self._noises[:num_pairs, :]
+
+            fitness_for_center = fitness_pos - fitness_neg
+            fitness_for_logstd = (fitness_pos + fitness_neg) / 2
+        else:
+            fitness_for_center = fitness_arr
+            fitness_for_logstd = fitness_arr
+
         # 2. Compute Gradients
         stdev = self._xp.exp(self._logstd)
 
-        grad_center = self._xp.mean(fitness_arr * base_noises, axis=0) / stdev
-        grad_log_stdev = self._xp.mean(fitness_arr * (base_noises**2 - 1), axis=0)
+        grad_center = self._xp.mean(fitness_for_center * base_noises, axis=0) / stdev
+        grad_log_stdev = self._xp.mean(
+            fitness_for_logstd * (base_noises**2 - 1), axis=0
+        )
 
         # 3. Apply Natural Gradient Adjustment
         if self._natural_gradient:
@@ -286,8 +293,9 @@ class PGPE:
             delta_logstd = self._xp.clip(delta_logstd, -limit_arr, limit_arr)
         self._logstd += delta_logstd
 
-        # 5. Scheduling
+        # 5. Scheduling and Cleanup
         self._update_learning_rates()
+        self._noises = None
 
     def _update_running_stats(self, fitness: Array) -> None:
         self._generation_count += 1
