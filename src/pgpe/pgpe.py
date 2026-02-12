@@ -209,7 +209,7 @@ class PGPE:
 
     @property
     def center(self) -> Array:
-        return self._xp.asarray(self._center, copy=True)
+        return self._xp.asarray(self._center)
 
     @property
     def stdev(self) -> Array:
@@ -240,7 +240,18 @@ class PGPE:
                 f"Fitness is on {fitnesses.device}, but PGPE is on {self._device}."
             )
 
-        fitness_arr = self._xp.asarray(fitnesses, device=self._device)
+        fitness_arr = self._xp.asarray(
+            fitnesses, dtype=self._dtype, device=self._device
+        )
+
+        if not self._xp.all(self._xp.isfinite(fitness_arr)):
+            warnings.warn(
+                "Non-finite fitness values detected (NaN or Inf). "
+                "Ignoring this step to prevent optimizer corruption.",
+                UserWarning,
+                stacklevel=2,
+            )
+            return
 
         if fitness_arr.ndim > 2 or (
             fitness_arr.ndim == 2 and fitness_arr.shape[1] != 1
@@ -284,6 +295,11 @@ class PGPE:
             fitness_for_logstd * (base_noises**2 - 1), axis=0
         )
 
+        if self._symmetric_sampling:
+            # Symmetric gradient has double magnitude w.r.t. non-symmetric gradient.
+            # Dividing by 2 the symmetric gradient keeps the effective lr consistent.
+            grad_center = grad_center / 2
+
         # 3. Apply Natural Gradient Adjustment
         if self._natural_gradient:
             grad_center = grad_center * stdev**2
@@ -323,7 +339,13 @@ class PGPE:
         )
 
     def _update_learning_rates(self) -> None:
-        if self._generation_count >= self._max_generations:
+        if self._generation_count > self._max_generations:
+            warnings.warn(
+                f"Current generation ({self._generation_count}) exceeds max_generations"
+                f" ({self._max_generations}). Learning rate decay has stopped.",
+                UserWarning,
+                stacklevel=2,  # Points to the user's code calling tell()
+            )
             return
 
         # Linear decay from 1.0 down to min_lr_ratio

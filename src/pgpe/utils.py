@@ -48,6 +48,8 @@ def ensure_vector(
         return xp.full(length, value, dtype=dtype, device=device)
 
     arr = xp.asarray(value, dtype=dtype, device=device)
+    if arr.ndim == 0:
+        arr = xp.expand_dims(arr, axis=0)
     if arr.ndim != 1:
         raise ValueError(f"Expected 1D vector, got shape {arr.shape}")
     if arr.shape[0] != length:
