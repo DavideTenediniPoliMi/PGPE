@@ -15,26 +15,21 @@ def test_numpy_explicit_backend():
     """
     # 1. Initialize with explicit NumPy arrays
     center_init = np.zeros(5, dtype=np.float32)
-    pgpe = PGPE(
-        solution_length=5,
-        popsize=10,
-        center_init=center_init,
-        seed=SEED
-    )
+    pgpe = PGPE(solution_length=5, popsize=10, center_init=center_init, seed=SEED)
 
     # 2. Check internal backend detection
     #    Note: array_api_compat often returns the module itself
     assert "numpy" in pgpe._xp.__name__ or pgpe._xp == np
-    
+
     # 3. Check output types
     solutions = pgpe.ask()
     assert isinstance(solutions, np.ndarray)
     assert solutions.dtype == np.float32
-    
+
     # 4. Check tell() with numpy input
     fitness = np.random.rand(10).astype(np.float32)
     pgpe.tell(fitness)
-    
+
     # Center should still be numpy
     assert isinstance(pgpe.center, np.ndarray)
 
@@ -46,27 +41,22 @@ def test_torch_cpu_backend():
     """
     # 1. Initialize with PyTorch tensors (CPU)
     center_init = torch.zeros(5, dtype=torch.float32)
-    pgpe = PGPE(
-        solution_length=5,
-        popsize=10,
-        center_init=center_init,
-        seed=SEED
-    )
+    pgpe = PGPE(solution_length=5, popsize=10, center_init=center_init, seed=SEED)
 
     # 2. Check internal backend detection
     #    The backend name should contain 'torch'
-    assert 'torch' in pgpe._xp.__name__
-    
+    assert "torch" in pgpe._xp.__name__
+
     # 3. Check output types
     solutions = pgpe.ask()
     assert isinstance(solutions, torch.Tensor)
     assert solutions.dtype == torch.float32
-    assert solutions.device.type == 'cpu'
-    
+    assert solutions.device.type == "cpu"
+
     # 4. Check tell() with torch input
     fitness = torch.rand(10, dtype=torch.float32)
     pgpe.tell(fitness)
-    
+
     # Center should still be torch
     assert isinstance(pgpe.center, torch.Tensor)
 
@@ -76,17 +66,12 @@ def test_torch_cuda_backend():
     """
     Verify that passing CUDA tensors keeps everything on the GPU.
     """
-    device = torch.device('cuda')
-    
+    device = torch.device("cuda")
+
     # 1. Initialize with CUDA tensor
     center_init = torch.zeros(5, device=device)
-    
-    pgpe = PGPE(
-        solution_length=5,
-        popsize=10,
-        center_init=center_init,
-        seed=SEED
-    )
+
+    pgpe = PGPE(solution_length=5, popsize=10, center_init=center_init, seed=SEED)
 
     # 2. Verify internal device matches
     assert pgpe._device == device
@@ -94,13 +79,13 @@ def test_torch_cuda_backend():
     # 3. Check output location
     solutions = pgpe.ask()
     assert isinstance(solutions, torch.Tensor)
-    assert solutions.device.type == 'cuda'
-    
+    assert solutions.device.type == "cuda"
+
     # 4. Check optimization step stays on GPU
     fitness = torch.rand(10, device=device)
     pgpe.tell(fitness)
-    
-    assert pgpe.center.device.type == 'cuda'
+
+    assert pgpe.center.device.type == "cuda"
 
 
 def test_mixed_backends_error():
@@ -112,10 +97,11 @@ def test_mixed_backends_error():
         PGPE(
             solution_length=5,
             popsize=10,
-            center_init=np.zeros(5),       # NumPy
-            stdev_init=torch.zeros(5),      # Torch
-            seed=SEED
+            center_init=np.zeros(5),  # NumPy
+            stdev_init=torch.zeros(5),  # Torch
+            seed=SEED,
         )
+
 
 def test_strict_compliance_loop():
     """
@@ -125,7 +111,7 @@ def test_strict_compliance_loop():
     # 1. Create inputs using the strict backend
     #    This forces PGPE to detect 'xp' as array_api_strict
     center = xp.asarray([0.0, 0.0], dtype=xp.float32)
-    
+
     # 2. Initialize PGPE
     optimizer = PGPE(
         solution_length=2,
@@ -135,35 +121,38 @@ def test_strict_compliance_loop():
         center_learning_rate=0.1,
         stdev_learning_rate=0.1,
         max_generations=5,
-        dtype=xp.float32, # Pass the actual strict dtype object
-        seed=SEED
+        dtype=xp.float32,  # Pass the actual strict dtype object
+        seed=SEED,
     )
 
     # 3. Verify backend detection
     #    Internal check to ensure we aren't secretly using numpy
-    assert optimizer._xp.__name__ == "array_api_strict", "Failed to detect strict backend"
+    assert optimizer._xp.__name__ == "array_api_strict", (
+        "Failed to detect strict backend"
+    )
 
     # 4. Run the loop (Coverage)
     #    We must call every method we want to verify.
     for _ in range(3):
         # ASK: Checks xp.concat, xp.randn, xp.exp
         solutions = optimizer.ask()
-        
+
         # Verify output is a strict array
         # Note: In strict mode, isinstance checks might be tricky depending on version,
         # but the object should definitely NOT be numpy.ndarray
-        assert type(solutions).__module__ == 'array_api_strict._array_object'
-        
+        assert type(solutions).__module__ == "array_api_strict._array_object"
+
         # Fake fitness (must be a strict array too!)
         fitness = xp.asarray([1.0, 0.5, -0.5, -1.0], dtype=xp.float32)
-        
+
         # TELL: Checks xp.mean, xp.sqrt, optimizer steps
         optimizer.tell(fitness)
+
 
 def test_everything_enabled():
     """
     Runs a PGPE loop with ALL features enabled to maximize code coverage.
-    
+
     Features covered:
     - Symmetric Sampling (if self._symmetric_sampling...)
     - Fitness Normalization (if self._normalize_fitness...)
@@ -174,31 +163,26 @@ def test_everything_enabled():
     # 1. Setup with EVERYTHING enabled
     popsize = 10
     length = 5
-    
+
     pgpe = PGPE(
         solution_length=length,
         popsize=popsize,
-        
         # Enable Symmetric Sampling (Ask/Tell logic)
         symmetric_sampling=True,
-        
         # Enable Natural Gradients (Fisher info logic)
         natural_gradient=True,
-        
         # Enable Fitness Normalization (Running stats logic)
         normalize_fitness=True,
-        
         # Enable Clipping (Force a high LR and strict clip to trigger logic)
-        stdev_learning_rate=0.5, 
+        stdev_learning_rate=0.5,
         stdev_clip_percent=0.1,
-        
-        seed=SEED
+        seed=SEED,
     )
 
     # 2. ASK Step
     # Triggers symmetric noise generation (creating + and - noise)
     solutions = pgpe.ask()
-    
+
     assert solutions.shape == (popsize, length)
     # Check that noises were mirrored internally
     half = popsize // 2
@@ -207,12 +191,12 @@ def test_everything_enabled():
     # 3. TELL Step
     # Create random fitnesses
     fitness = np.random.randn(popsize)
-    
+
     # We want to force clipping logic, so let's make gradients likely large
     # by having diverse fitness values
     fitness[0] = 100.0
     fitness[1] = -100.0
-    
+
     # This single call hits:
     # - Rank folding (symmetric)
     # - Running mean/var updates (normalization)
@@ -223,19 +207,22 @@ def test_everything_enabled():
     # 4. Verify State Updated
     # Center should have moved
     assert not np.allclose(pgpe.center, 0.0)
-    
+
     # Stdev should have changed (and ideally been clipped)
-    # We can't easily assert "it was clipped" without mocking, 
+    # We can't easily assert "it was clipped" without mocking,
     # but we covered the lines of code.
     assert not np.allclose(pgpe.stdev, 0.1)
-    
+
     # 5. Verify Running Stats updated
     assert pgpe._generation_count == 1
     # Variance should no longer be exactly 1.0
     assert pgpe._running_var != 1.0
 
+
 import os
+
 os.environ["XLA_FLAGS"] = "--xla_force_host_platform_device_count=2"
+
 
 def test_jax_strict_device_enforcement():
     """
@@ -264,16 +251,11 @@ def test_jax_strict_device_enforcement():
     # SCENARIO A: Mixed Devices in Initialization (Caught by get_xp)
     # ---------------------------------------------------------------------
     center = jax.device_put(jnp.zeros(5), dev0)
-    stdev  = jax.device_put(jnp.ones(5) * 0.1, dev1)
+    stdev = jax.device_put(jnp.ones(5) * 0.1, dev1)
 
     # This MUST fail because get_xp scans both inputs and sees mismatch
     with pytest.raises(ValueError, match="Mixed devices detected"):
-        PGPE(
-            solution_length=5,
-            popsize=10,
-            center_init=center,
-            stdev_init=stdev
-        )
+        PGPE(solution_length=5, popsize=10, center_init=center, stdev_init=stdev)
 
     # ---------------------------------------------------------------------
     # SCENARIO B: Wrong Device in tell() (Caught by tell strict check)
@@ -283,7 +265,7 @@ def test_jax_strict_device_enforcement():
         solution_length=5,
         popsize=10,
         center_init=jax.device_put(jnp.zeros(5), dev0),
-        device=dev0
+        device=dev0,
     )
 
     # Verify initialization landed on dev0
@@ -308,9 +290,10 @@ def test_jax_strict_device_enforcement():
 
     # This should succeed
     pgpe.tell(fitness_good)
-    
+
     # Confirm parameter update happened on dev0
     assert pgpe.center.device == dev0
+
 
 def test_jax():
     """
@@ -328,11 +311,7 @@ def test_jax():
     stdev = jnp.ones(5) * 0.1
 
     pgpe = PGPE(
-        solution_length=5,
-        popsize=10,
-        center_init=center,
-        stdev_init=stdev,
-        seed=SEED
+        solution_length=5, popsize=10, center_init=center, stdev_init=stdev, seed=SEED
     )
 
     # Run a simple ask/tell loop

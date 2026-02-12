@@ -71,6 +71,7 @@ def test_ask_tell_loop_reinforce():
         center_learning_rate=0.1,
         stdev_learning_rate=0.1,
         natural_gradient=False,
+        symmetric_sampling=False,
         seed=SEED,
     )
 
@@ -176,46 +177,44 @@ def test_fit_on_simple_function():
     # After optimization, center should be close to [3.0, 3.0]
     assert np.allclose(pgpe.center, 3.0, atol=0.5)
 
+
 def test_checkpointing_consistency():
     """
     Verifies that saving and loading state produces an identical optimizer.
     """
     # 1. Train "Model A" for a few steps
-    pgpe_a = PGPE(
-        solution_length=5,
-        popsize=10,
-        center_init=np.zeros(5),
-        seed=SEED
-    )
-    
+    pgpe_a = PGPE(solution_length=5, popsize=10, center_init=np.zeros(5), seed=SEED)
+
     # Run 5 generations to mutate state (move center, update moments, change internal optimizer step)
     for i in range(5):
         pgpe_a.ask()
-        # Random fitness, but deterministic via seed for this specific run logic? 
+        # Random fitness, but deterministic via seed for this specific run logic?
         # Actually fitness doesn't matter as long as we save AFTER tell.
         fitness = np.random.randn(10)
         pgpe_a.tell(fitness)
-        print(f"Step {i}: center={pgpe_a.center.dtype}, optimizer_m={pgpe_a._optimizer.m.dtype}")
+        print(
+            f"Step {i}: center={pgpe_a.center.dtype}, optimizer_m={pgpe_a._optimizer.m.dtype}"
+        )
 
     # 2. Save State
     state = pgpe_a.state_dict()
-    
+
     # 3. Create "Model B" (Fresh init)
     pgpe_b = PGPE(
         solution_length=5,
         popsize=10,
-        center_init=np.ones(5), # Different init to prove load works
-        seed=999 # Different seed (RNG state won't match, but params MUST)
+        center_init=np.ones(5),  # Different init to prove load works
+        seed=999,  # Different seed (RNG state won't match, but params MUST)
     )
-    
+
     # 4. Load State into B
     pgpe_b.load_state_dict(state)
-    
+
     # 5. Verify Internal State Matches Exactly
     assert np.allclose(pgpe_a.center, pgpe_b.center)
     assert np.allclose(pgpe_a.stdev, pgpe_b.stdev)
     assert pgpe_a._generation_count == pgpe_b._generation_count
-    
+
     # Verify running stats (critical for z-score)
     assert np.allclose(pgpe_a._running_mean, pgpe_b._running_mean)
     assert np.allclose(pgpe_a._running_var, pgpe_b._running_var)
@@ -227,47 +226,48 @@ def test_checkpointing_consistency():
     assert pgpe_a._optimizer.t == pgpe_b._optimizer.t
 
     # 6. Verify Behavior (One Step)
-    # Even though RNG is different, if we force the same input, 
+    # Even though RNG is different, if we force the same input,
     # the UPDATE must be identical.
-    
+
     # Force identical noise injection (mocking ask)
     forced_noises = np.random.randn(10, 5).astype(np.float32)
     pgpe_a._noises = forced_noises
-    pgpe_b._noises = forced_noises.copy() # Ensure independent copy
-    
+    pgpe_b._noises = forced_noises.copy()  # Ensure independent copy
+
     # Identical fitness
     fitness_step = np.random.randn(10).astype(np.float32)
     print(fitness_step)
     pgpe_a.tell(fitness_step)
     print(fitness_step)
     pgpe_b.tell(fitness_step)
-    
+
     # Final assertion: Did they evolve exactly the same way?
     assert np.allclose(pgpe_a.center, pgpe_b.center)
+
 
 def test_shape_canonicalization():
     """
     Verifies that tell() accepts (N,) and (N,1) and behaves identically.
     """
     pgpe = PGPE(solution_length=2, popsize=4, seed=SEED)
-    
+
     # Run with (N,)
     pgpe.ask()
     fit_flat = np.array([1.0, 2.0, 3.0, 4.0])
     pgpe.tell(fit_flat)
     center_after_flat = pgpe.center
-    
+
     # Reset and run with (N, 1)
     pgpe = PGPE(solution_length=2, popsize=4, seed=SEED)
     pgpe.ask()
     fit_col = fit_flat.reshape(-1, 1)
     pgpe.tell(fit_col)
     center_after_col = pgpe.center
-    
+
     assert np.allclose(center_after_flat, center_after_col)
 
     # Verify that invalid shapes raise errors
     pgpe = PGPE(solution_length=2, popsize=4, seed=SEED)
     pgpe.ask()
     with pytest.raises(ValueError, match="Fitness must be 1D or column vector"):
-        pgpe.tell(np.array([[1.0, 2.0], [3.0, 4.0]])) # (N, 2) is invalid
+        pgpe.tell(np.array([[1.0, 2.0], [3.0, 4.0]]))  # (N, 2) is invalid
