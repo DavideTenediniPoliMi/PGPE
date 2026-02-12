@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from .optimizers import Adam, Optimizer
 from .utils import (
@@ -61,7 +61,7 @@ class PGPE:
         stdev_clip_percent: float = 0.2,
         symmetric_sampling: bool = True,
         natural_gradient: bool = False,
-        normalize_fitness: bool = True,
+        normalization_mode: Literal["z_score", "rank", "none"] = "z_score",
         stats_alpha: float = 0.1,
         # --- Scheduling ---
         max_generations: int = 1000,
@@ -105,9 +105,12 @@ class PGPE:
             natural_gradient: If True, applies a diagonal approximation of the
                 Fisher Information Matrix to the gradient updates.
                 Default is False (standard gradient).
-            normalize_fitness: If True, fitness values are z-scored using a
-                cumulative running mean and variance before gradient computation.
-                Recommended to handle shifting fitness landscapes. Default is True.
+            normalization_mode: Method for normalizing fitness values before computing
+                gradients. Options are:
+                - "z_score": Standardize fitness to have mean 0 and std 1 (default).
+                - "rank": Use rank-based normalization (fitness values replaced by their
+                  rank among the population, scaled to [-0.5, 0.5]).
+                - "none": No normalization applied.
             stats_alpha: Smoothing factor for the running mean/variance of fitness
                 normalization. Must be in (0, 1]. Higher values give more weight to
                 recent fitness values. Default is 0.1.
@@ -126,8 +129,14 @@ class PGPE:
         self._length = ensure_positive_int(solution_length, "solution_length")
         self._popsize = ensure_positive_int(popsize, "popsize")
         self._symmetric_sampling = symmetric_sampling
-        self._normalize_fitness = normalize_fitness
+        self._normalization_mode = normalization_mode
         self._natural_gradient = natural_gradient
+
+        if self._normalization_mode not in ["z_score", "rank", "none"]:
+            raise ValueError("normalization_mode must be 'z_score', 'rank', or 'none'")
+
+        if self._normalization_mode == "rank" and self._popsize == 1:
+            raise ValueError("Rank normalization is not meaningful with popsize=1.")
 
         stats_alpha = ensure_positive_float(stats_alpha, "stats_alpha")
         if not (0 < stats_alpha <= 1):
@@ -231,12 +240,28 @@ class PGPE:
         self._stdev = self.stdev
         return self._center + self._stdev * self._noises
 
-    def tell(self, fitnesses: Array) -> None:  # noqa: C901
+    def tell(self, fitnesses: Array) -> None:
         """Updates the internal distribution based on evaluated fitnesses.
         Must be called after `ask()` and with fitnesses corresponding to the
         solutions returned by `ask()`.
         The array must match the device/dtype of the internal state.
         """
+        fitness_arr = self._validate_fitness(fitnesses)
+        if fitness_arr is None:
+            return
+        self._generation_count += 1
+
+        fitness_arr = self._normalize_fitness_values(fitness_arr)
+
+        grad_center, grad_log_stdev = self._compute_gradients(fitness_arr)
+
+        self._update_parameters(grad_center, grad_log_stdev)
+
+        self._update_learning_rates()
+        self._noises = None
+        self._stdev = None
+
+    def _validate_fitness(self, fitnesses: Array) -> Array | None:
         if self._noises is None or self._stdev is None:
             raise RuntimeError("Called tell() before ask().")
 
@@ -254,9 +279,9 @@ class PGPE:
                 "Non-finite fitness values detected (NaN or Inf). "
                 "Ignoring this step to prevent optimizer corruption.",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=3,
             )
-            return
+            return None
 
         if fitness_arr.ndim > 2 or (
             fitness_arr.ndim == 2 and fitness_arr.shape[1] != 1
@@ -271,62 +296,18 @@ class PGPE:
                 f"Expected {self._popsize} fitness values, got {fitness_arr.shape[0]}"
             )
 
-        self._generation_count += 1
-        # 1. Normalize Fitness (apply baseline) and fold symmetric pairs if needed
-        if self._normalize_fitness:
+        return fitness_arr
+
+    def _normalize_fitness_values(self, fitness_arr: Array) -> Array:
+        if self._normalization_mode == "z_score":
             self._update_running_stats(fitness_arr)
-            fitness_arr = (fitness_arr - self._running_mean) / (
+            return (fitness_arr - self._running_mean) / (
                 self._xp.sqrt(self._running_var) + 1e-8
             )
+        if self._normalization_mode == "rank":
+            return self._compute_centered_ranks(fitness_arr)
 
-        base_noises = self._noises
-        if self._symmetric_sampling:
-            num_pairs = self._popsize // 2
-            fitness_pos = fitness_arr[:num_pairs, :]
-            fitness_neg = fitness_arr[num_pairs:, :]
-            base_noises = self._noises[:num_pairs, :]
-
-            fitness_for_center = fitness_pos - fitness_neg
-            fitness_for_logstd = (fitness_pos + fitness_neg) / 2
-        else:
-            fitness_for_center = fitness_arr
-            fitness_for_logstd = fitness_arr
-
-        # 2. Compute Gradients
-        grad_center = (
-            self._xp.mean(fitness_for_center * base_noises, axis=0) / self._stdev
-        )
-        grad_log_stdev = self._xp.mean(
-            fitness_for_logstd * (base_noises**2 - 1), axis=0
-        )
-
-        if self._symmetric_sampling:
-            # Symmetric gradient has double magnitude w.r.t. non-symmetric gradient.
-            # Dividing by 2 the symmetric gradient keeps the effective lr consistent.
-            grad_center = grad_center / 2
-
-        # 3. Apply Natural Gradient Adjustment
-        if self._natural_gradient:
-            grad_center = grad_center * self._stdev**2
-            grad_log_stdev = grad_log_stdev / 2
-
-        # 4. Parameter Updates
-        self._center = self._center + self._optimizer.ascent(grad_center)
-
-        # Stdev update (simple gradient ascent with clipping)
-        delta_logstd = self._stdev_lr * grad_log_stdev
-        if self._stdev_clip_percent > 0:
-            limit_arr = self._xp.asarray(
-                1.0 + self._stdev_clip_percent, dtype=self._dtype, device=self._device
-            )
-            limit_arr = self._xp.log(limit_arr)
-            delta_logstd = self._xp.clip(delta_logstd, -limit_arr, limit_arr)
-        self._logstd += delta_logstd
-
-        # 5. Scheduling and Cleanup
-        self._update_learning_rates()
-        self._noises = None
-        self._stdev = None
+        return fitness_arr
 
     def _update_running_stats(self, fitness: Array) -> None:
         batch_mean = self._xp.mean(fitness)
@@ -343,6 +324,67 @@ class PGPE:
         self._running_var = self._running_var + self._alpha * (
             batch_var - self._running_var
         )
+
+    def _compute_centered_ranks(self, fitness: Array) -> Array:
+        # argsort(argsort(x)) gives the rank of each element in the original order
+        # without inplace modifications.
+        sort_indices = self._xp.argsort(fitness, axis=0)
+        ranks = self._xp.argsort(sort_indices, axis=0)
+        ranks = self._xp.astype(ranks, self._dtype)
+
+        return (ranks / (self._popsize - 1)) - 0.5
+
+    def _compute_gradients(self, fitness_arr: Array) -> tuple[Array, Array]:
+        base_noises: Array = self._noises  # type: ignore
+
+        if self._symmetric_sampling:
+            num_pairs = self._popsize // 2
+            fitness_pos = fitness_arr[:num_pairs, :]
+            fitness_neg = fitness_arr[num_pairs:, :]
+            base_noises = self._noises[:num_pairs, :]  # type: ignore
+
+            fitness_for_center = fitness_pos - fitness_neg
+            fitness_for_logstd = (fitness_pos + fitness_neg) / 2
+        else:
+            fitness_for_center = fitness_arr
+            fitness_for_logstd = fitness_arr
+
+        grad_center = (
+            self._xp.mean(fitness_for_center * base_noises, axis=0) / self._stdev
+        )
+        grad_log_stdev = self._xp.mean(
+            fitness_for_logstd * (base_noises**2 - 1), axis=0
+        )
+
+        # Adjust gradients for symmetric sampling and natural gradient if enabled
+        # to keep effective learning rates consistent regardless of these options.
+        # (Symmetric sampling doubles the raw gradient magnitude, so divide by 2.)
+        if self._symmetric_sampling:
+            grad_center = grad_center / 2
+
+        if self._natural_gradient:
+            grad_center = grad_center * self._stdev**2  # type: ignore
+            grad_log_stdev = grad_log_stdev / 2
+
+        return grad_center, grad_log_stdev
+
+    def _update_parameters(self, grad_center: Array, grad_log_stdev: Array) -> None:
+        # Center Update (Optimizer)
+        self._center = self._center + self._optimizer.ascent(grad_center)
+
+        # Stdev Update (Gradient Ascent + Clipping)
+        delta_logstd = self._stdev_lr * grad_log_stdev
+        if self._stdev_clip_percent > 0:
+            limit = self._xp.log(
+                self._xp.asarray(
+                    1.0 + self._stdev_clip_percent,
+                    dtype=self._dtype,
+                    device=self._device,
+                )
+            )
+            delta_logstd = self._xp.clip(delta_logstd, -limit, limit)
+
+        self._logstd += delta_logstd
 
     def _update_learning_rates(self) -> None:
         if self._generation_count > self._max_generations:
