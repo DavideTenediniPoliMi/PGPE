@@ -178,6 +178,9 @@ class PGPE:
                 device=self._device,
             )
         )
+        # Ensure logstd is finite
+        if not self._xp.all(self._xp.isfinite(self._logstd)):
+            raise ValueError("Initial stdev must be positive and finite.")
 
         # Optimizer Instantiation
         self._optimizer = optimizer_class(
@@ -247,6 +250,7 @@ class PGPE:
                 f"Expected {self._popsize} fitness values, got {fitness_arr.shape[0]}"
             )
 
+        self._generation_count += 1
         # 1. Normalize Fitness (apply baseline) and fold symmetric pairs if needed
         if self._normalize_fitness:
             self._update_running_stats(fitness_arr)
@@ -298,8 +302,6 @@ class PGPE:
         self._noises = None
 
     def _update_running_stats(self, fitness: Array) -> None:
-        self._generation_count += 1
-
         batch_mean = self._xp.mean(fitness)
         batch_var = self._xp.var(fitness)
 

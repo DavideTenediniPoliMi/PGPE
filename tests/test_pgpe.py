@@ -28,6 +28,9 @@ def test_initialization_errors():
     with pytest.raises(ValueError, match="Expected positive integer"):
         PGPE(solution_length=-5, popsize=10)
 
+    with pytest.raises(ValueError, match="Initial stdev must be"):
+        PGPE(solution_length=10, popsize=10, stdev_init=0.0)
+
 
 def test_ask_shapes_and_symmetry():
     """Test that ask() returns correct shapes and respects symmetric sampling."""
