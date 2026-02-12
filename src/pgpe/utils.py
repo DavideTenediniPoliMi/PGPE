@@ -1,5 +1,5 @@
-from collections.abc import Callable, Iterable
-from typing import Any
+from collections.abc import Iterable
+from typing import Any, Protocol
 
 from array_api.latest import Array, ArrayNamespace
 from array_api_compat import array_namespace
@@ -101,63 +101,97 @@ def get_xp(*objs: Any) -> tuple[ArrayNamespace, Any]:
     ) from None
 
 
-def setup_randn(
+#### RNG Setup Utility ####
+
+
+class RNGProtocol(Protocol):
+    def __call__(self, shape: tuple[int, ...]) -> Array: ...
+    def get_state(self) -> Any: ...
+    def set_state(self, state: Any) -> None: ...
+
+
+class NumpyRNG:
+    def __init__(
+        self, xp: ArrayNamespace, dtype: Any, device: Any, seed: int | None
+    ) -> None:
+        self.xp = xp
+        self.dtype = dtype
+        self.device = device
+
+        # Prefer backend-specific rng if available, else fallback to numpy
+        if hasattr(xp, "random") and hasattr(xp.random, "default_rng"):
+            self.rng = xp.random.default_rng(seed)
+        else:
+            import numpy as np  # noqa: PLC0415
+
+            self.rng = np.random.default_rng(seed)
+
+    def __call__(self, shape: tuple[int, ...]) -> Array:
+        # Generate on CPU (NumPy) then cast/move to device
+        data = self.rng.standard_normal(shape)
+        return self.xp.asarray(data, dtype=self.dtype, device=self.device)
+
+    def get_state(self) -> Any:
+        return self.rng.bit_generator.state
+
+    def set_state(self, state: Any) -> None:
+        self.rng.bit_generator.state = state
+
+
+def setup_randn(  # noqa: C901
     xp: ArrayNamespace, dtype: Any, device: Any, seed: int | None
-) -> Callable[[tuple[int, ...]], Array]:
+) -> RNGProtocol:
     """
-    Returns a function 'randn(shape)' that generates random numbers
-    on the correct backend and device.
+    Returns an RNG object that generates random numbers on the correct backend.
+    The object is callable: rng(shape) -> Array.
+    It also provides .get_state() and .set_state(state) for checkpointing.
     """
-    # PyTorch (GPU/CPU)
+
+    # --- PyTorch Backend ---
     if "torch" in xp.__name__:  # type: ignore
         import torch  # noqa: PLC0415
 
-        # Create a separate generator to avoid affecting global state
-        gen = torch.Generator(device=device)
-        if seed is not None:
-            gen.manual_seed(seed)
+        class TorchRNG:
+            def __init__(self, device: Any, dtype: Any, seed: int | None) -> None:
+                self.gen = torch.Generator(device=device)
+                if seed is not None:
+                    self.gen.manual_seed(seed)
+                self.device = device
+                self.dtype = dtype
 
-        def randn_torch(shape: tuple[int, ...]) -> Array:
-            return torch.randn(shape, generator=gen, device=device, dtype=dtype)  # type: ignore
+            def __call__(self, shape: tuple[int, ...]) -> Array:
+                return torch.randn(  # type: ignore
+                    shape, generator=self.gen, device=self.device, dtype=self.dtype
+                )
 
-        return randn_torch
+            def get_state(self) -> Any:
+                return self.gen.get_state()
 
+            def set_state(self, state: Any) -> None:
+                self.gen.set_state(state)
+
+        return TorchRNG(device, dtype, seed)
+
+    # --- JAX Backend ---
     if "jax" in xp.__name__:  # type: ignore
         import jax  # noqa: PLC0415
 
-        class JAXStatefulRNG:
+        class JAXRNG:
             def __init__(self, seed: int | None) -> None:
-                # Handle seed: JAX requires an integer, defaults to 0 if None
                 _seed = seed if seed is not None else 0
                 self.key = jax.random.PRNGKey(_seed)
 
             def __call__(self, shape: tuple[int, ...]) -> Array:
-                # Split the key: one for generating data, one for the next state
                 self.key, subkey = jax.random.split(self.key)
                 return jax.random.normal(subkey, shape, dtype=dtype)  # type: ignore
 
-        # Return the bound method or callable instance
-        return JAXStatefulRNG(seed)
+            def get_state(self) -> Any:
+                return self.key
 
-    # NumPy / CuPy / Compliant Backends
-    # Most compliant libraries mirror the NumPy random API
-    if hasattr(xp, "random") and hasattr(xp.random, "default_rng"):
-        rng = xp.random.default_rng(seed)
+            def set_state(self, state: Any) -> None:
+                self.key = state
 
-        def randn_numpy(shape: tuple[int, ...]) -> Array:
-            # We cast to ensure dtype/device are correct (e.g. for CuPy)
-            return xp.asarray(rng.standard_normal(shape), dtype=dtype, device=device)
+        return JAXRNG(seed)
 
-        return randn_numpy
-
-    # Fallback (e.g. strict mode or obscure backends)
-    import numpy as np  # noqa: PLC0415
-
-    rng_fallback = np.random.default_rng(seed)
-
-    def randn_fallback(shape: tuple[int, ...]) -> Array:
-        return xp.asarray(
-            rng_fallback.standard_normal(shape), dtype=dtype, device=device
-        )
-
-    return randn_fallback
+    # --- NumPy / Default Backend ---
+    return NumpyRNG(xp, dtype, device, seed)

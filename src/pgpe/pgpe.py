@@ -338,6 +338,7 @@ class PGPE:
             "running_var": self._running_var,
             "generation_count": self._generation_count,
             "optimizer_state": self._optimizer.state_dict(),
+            "rng_state": self._randn.get_state(),
         }
 
     def load_state_dict(self, state: dict[str, Any]) -> None:
@@ -354,6 +355,7 @@ class PGPE:
         self._running_mean = _load(state["running_mean"])
         self._running_var = _load(state["running_var"])
         self._generation_count = state["generation_count"]
+        self._randn.set_state(state["rng_state"])
 
         # Restore Optimizer
         opt_state = state["optimizer_state"]
