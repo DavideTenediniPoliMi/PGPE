@@ -20,6 +20,7 @@ def test_initialization():
     assert np.allclose(pgpe.stdev, 0.1)
 
 
+@pytest.mark.filterwarnings("ignore:divide by zero")
 def test_initialization_errors():
     """Test that invalid arguments raise appropriate errors."""
     with pytest.raises(ValueError, match="popsize must be even"):

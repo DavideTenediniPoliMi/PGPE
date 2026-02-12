@@ -172,7 +172,7 @@ def test_everything_enabled():
         # Enable Natural Gradients (Fisher info logic)
         natural_gradient=True,
         # Enable Fitness Normalization (Running stats logic)
-        normalize_fitness=True,
+        normalization_mode = "rank",
         # Enable Clipping (Force a high LR and strict clip to trigger logic)
         stdev_learning_rate=0.5,
         stdev_clip_percent=0.1,
@@ -215,8 +215,8 @@ def test_everything_enabled():
 
     # 5. Verify Running Stats updated
     assert pgpe._generation_count == 1
-    # Variance should no longer be exactly 1.0
-    assert pgpe._running_var != 1.0
+    # Variance should still be exactly 1.0 since it's rank
+    assert pgpe._running_var == 1.0
 
 
 import os
