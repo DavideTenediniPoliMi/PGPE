@@ -1,9 +1,12 @@
-from typing import Any, Protocol, runtime_checkable
+from __future__ import annotations
 
-from array_api.latest import Array, ArrayNamespace
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, Any
 
 from .utils import ensure_positive_float, ensure_positive_int
 
+if TYPE_CHECKING:
+    from array_api.latest import Array, ArrayNamespace
 # ==========================================================================
 # The following section of this source file contains optimizer classes
 # copied and adapted from OpenAI's evolution-strategies-starter repository.

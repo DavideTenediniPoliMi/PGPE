@@ -1,7 +1,7 @@
-from collections.abc import Iterable
-from typing import Any
+from __future__ import annotations
 
-from array_api.latest import Array
+import warnings
+from typing import TYPE_CHECKING, Any
 
 from .optimizers import Adam, Optimizer
 from .utils import (
@@ -11,6 +11,11 @@ from .utils import (
     get_xp,
     setup_randn,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from array_api.latest import Array
 
 
 class PGPE:

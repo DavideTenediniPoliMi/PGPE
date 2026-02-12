@@ -1,8 +1,13 @@
-from collections.abc import Iterable
-from typing import Any, Protocol
+from __future__ import annotations
 
-from array_api.latest import Array, ArrayNamespace
+from typing import TYPE_CHECKING, Any, Protocol
+
 from array_api_compat import array_namespace
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from array_api.latest import Array, ArrayNamespace
 
 try:
     import array_api_compat.numpy as np
